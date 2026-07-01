@@ -65,3 +65,13 @@ export interface Alert {
   zone: string;
   active: boolean;
 }
+
+export interface Device {
+  id: string;
+  device_uid: string;
+  nickname: string;
+  status: 'online' | 'offline';
+  user_id?: string;
+  created_at?: string;
+}
+

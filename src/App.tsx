@@ -1,66 +1,192 @@
 import { useState, useEffect } from 'react';
 import { 
-  loadData, saveData, INITIAL_ZONES, INITIAL_METRICS, 
+  loadData, saveData, INITIAL_ZONES, 
   INITIAL_ALERTS, INITIAL_JOURNAL_ENTRIES, INITIAL_CERTIFICATE 
 } from './data';
-import { Zone, Alert, JournalEntry, Certificate } from './types';
+import { Zone, Alert, JournalEntry } from './types';
 import Header from './components/Header';
 import Navbar, { TabType } from './components/Navbar';
 import DashboardTab from './components/DashboardTab';
 import TrackingTab from './components/TrackingTab';
 import QualityTab from './components/QualityTab';
 import SettingsTab from './components/SettingsTab';
+import AuthScreen from './components/AuthScreen';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, CheckCircle2, AlertTriangle, BellRing, Info } from 'lucide-react';
+import { X, AlertTriangle, BellRing, Info } from 'lucide-react';
+import { 
+  isSupabaseConfigured, getZones, upsertZone, 
+  getJournalEntries, upsertJournalEntry, deleteJournalEntryDb, 
+  getAlerts, upsertAlert, supabase 
+} from './supabase';
 
 export default function App() {
+  // Authentication State
+  const [user, setUser] = useState<{ email: string; isMock: boolean } | null>(() => {
+    const cached = localStorage.getItem('growsmart_user');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   
-  // Load state from local storage or defaults
-  const [zones, setZones] = useState<Zone[]>(() => loadData('zones', INITIAL_ZONES));
-  const [alerts, setAlerts] = useState<Alert[]>(() => loadData('alerts', INITIAL_ALERTS));
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(() => loadData('journal_entries', INITIAL_JOURNAL_ENTRIES));
+  // Helper to load user-scoped data or start blank
+  const getInitialState = <T,>(key: string, defaultValue: T): T => {
+    const cachedUser = localStorage.getItem('growsmart_user');
+    if (cachedUser) {
+      try {
+        const u = JSON.parse(cachedUser);
+        if (u && u.email) {
+          return loadData(`${u.email}_${key}`, defaultValue);
+        }
+      } catch {
+        // Fall through
+      }
+    }
+    return defaultValue;
+  };
+
+  // Load state from local storage or start blank if logged in
+  const [zones, setZones] = useState<Zone[]>(() => getInitialState<Zone[]>('zones', []));
+  const [alerts, setAlerts] = useState<Alert[]>(() => getInitialState<Alert[]>('alerts', []));
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(() => getInitialState<JournalEntry[]>('journal_entries', []));
   const [selectedZoneId, setSelectedZoneId] = useState<string>('zone-1');
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [notificationLogs, setNotificationLogs] = useState<string[]>(() => [
     'System initialization successful. Multi-spectrum LEDs online.',
-    'IoT Gateway secured. Continuous telemetry feed active.',
-    'Urgent alert: pH imbalance detected in Lettuce module (Zone 4).'
+    'IoT Gateway secured. Continuous telemetry feed active.'
   ]);
 
-  // Sync state to local storage when changed
+  const handleLoginSuccess = (email: string, isMock: boolean) => {
+    const userData = { email, isMock };
+    setUser(userData);
+    localStorage.setItem('growsmart_user', JSON.stringify(userData));
+    
+    // Load their specific data immediately upon login, default to blank
+    const userZones = loadData(`${email}_zones`, []);
+    const userAlerts = loadData(`${email}_alerts`, []);
+    const userJournals = loadData(`${email}_journal_entries`, []);
+    
+    setZones(userZones);
+    setAlerts(userAlerts);
+    setJournalEntries(userJournals);
+
+    setNotificationLogs(prev => [
+      `Authenticated successfully as agronomist: ${email}`,
+      ...prev
+    ]);
+  };
+
+  const handleLogout = async () => {
+    localStorage.removeItem('growsmart_user');
+    setUser(null);
+    if (isSupabaseConfigured && supabase) {
+      await supabase.auth.signOut();
+    }
+    setZones([]);
+    setAlerts([]);
+    setJournalEntries([]);
+    setNotificationLogs([
+      'Agronomist logged out. Secured biosphere connection.'
+    ]);
+  };
+
+  // Synchronize with Supabase as soon as the user is available or logs in
   useEffect(() => {
-    saveData('zones', zones);
-  }, [zones]);
+    async function syncWithSupabase() {
+      if (!user) return;
+
+      if (isSupabaseConfigured) {
+        setNotificationLogs(prev => [
+          'Initial sync: Establishing connection with Supabase backend...',
+          ...prev
+        ]);
+        try {
+          const remoteZones = await getZones(zones);
+          const remoteJournal = await getJournalEntries(journalEntries);
+          const remoteAlerts = await getAlerts(alerts);
+
+          setZones(remoteZones);
+          setJournalEntries(remoteJournal);
+          setAlerts(remoteAlerts);
+
+          setNotificationLogs(prev => [
+            'Live Sync Success: Loaded up-to-date data structures from Supabase tables!',
+            ...prev
+          ]);
+        } catch (err) {
+          console.error('Supabase initialization sync failed:', err);
+          setNotificationLogs(prev => [
+            'Sync Warn: Could not connect to Supabase tables. Using local cache.',
+            ...prev
+          ]);
+        }
+      } else {
+        setNotificationLogs(prev => [
+          'Client running in Local mode. Define Supabase Secrets to sync to database.',
+          ...prev
+        ]);
+      }
+    }
+    syncWithSupabase();
+  }, [user?.email]);
+
+  // Sync state to local storage when changed (for continuous user-friendly backup)
+  useEffect(() => {
+    if (user) {
+      saveData(`${user.email}_zones`, zones);
+    }
+  }, [zones, user?.email]);
 
   useEffect(() => {
-    saveData('alerts', alerts);
-  }, [alerts]);
+    if (user) {
+      saveData(`${user.email}_alerts`, alerts);
+    }
+  }, [alerts, user?.email]);
 
   useEffect(() => {
-    saveData('journal_entries', journalEntries);
-  }, [journalEntries]);
+    if (user) {
+      saveData(`${user.email}_journal_entries`, journalEntries);
+    }
+  }, [journalEntries, user?.email]);
 
   // Handler for dismissing alert
   const handleDismissAlert = (alertId: string) => {
     // Set alerts active to false
-    setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, active: false } : a));
+    setAlerts(prev => {
+      const updated = prev.map(a => a.id === alertId ? { ...a, active: false } : a);
+      const affected = updated.find(a => a.id === alertId);
+      if (affected) {
+        upsertAlert(affected);
+      }
+      return updated;
+    });
     
     // Dynamically heal Zone 4 to "Healthy" state when alert is closed
-    setZones(prev => prev.map(z => {
-      if (z.id === 'zone-4') {
-        return { 
-          ...z, 
-          status: 'Healthy', 
-          pH: 6.2, // restore to optimal pH
-          history: {
-            ...z.history,
-            pH: [...z.history.pH.slice(0, -1), 6.2] // update last value to healthy
-          }
-        };
-      }
-      return z;
-    }));
+    setZones(prev => {
+      const updated = prev.map(z => {
+        if (z.id === 'zone-4') {
+          const val: Zone = { 
+            ...z, 
+            status: 'Healthy', 
+            pH: 6.2, // restore to optimal pH
+            history: {
+              ...z.history,
+              pH: [...z.history.pH.slice(0, -1), 6.2] // update last value to healthy
+            }
+          };
+          upsertZone(val);
+          return val;
+        }
+        return z;
+      });
+      return updated;
+    });
 
     // Add logging notification
     setNotificationLogs(prev => [
@@ -75,23 +201,35 @@ export default function App() {
     if (hasActiveAlert) return;
 
     // Reactivate alert
-    setAlerts(prev => prev.map(a => a.id === 'alert-1' ? { ...a, active: true } : a));
+    setAlerts(prev => {
+      const updated = prev.map(a => a.id === 'alert-1' ? { ...a, active: true } : a);
+      const affected = updated.find(a => a.id === 'alert-1');
+      if (affected) {
+        upsertAlert(affected);
+      }
+      return updated;
+    });
     
     // Set Zone 4 back to Warning state with drop in pH
-    setZones(prev => prev.map(z => {
-      if (z.id === 'zone-4') {
-        return { 
-          ...z, 
-          status: 'Warning', 
-          pH: 5.4, // drop pH back
-          history: {
-            ...z.history,
-            pH: [...z.history.pH, 5.4]
-          }
-        };
-      }
-      return z;
-    }));
+    setZones(prev => {
+      const updated = prev.map(z => {
+        if (z.id === 'zone-4') {
+          const val: Zone = { 
+            ...z, 
+            status: 'Warning', 
+            pH: 5.4, // drop pH back
+            history: {
+              ...z.history,
+              pH: [...z.history.pH, 5.4]
+            }
+          };
+          upsertZone(val);
+          return val;
+        }
+        return z;
+      });
+      return updated;
+    });
 
     setNotificationLogs(prev => [
       `System Simulator triggered low pH event in Lettuce Unit (Zone 4).`,
@@ -102,8 +240,19 @@ export default function App() {
   // Handler for adding new Zone
   const handleAddZone = (newZone: Zone) => {
     setZones(prev => [...prev, newZone]);
+    upsertZone(newZone);
     setNotificationLogs(prev => [
       `Cultivation expansion: Established ${newZone.name} holding ${newZone.crop}.`,
+      ...prev
+    ]);
+  };
+
+  // Handler for updating existing Zone
+  const handleUpdateZone = (updatedZone: Zone) => {
+    setZones(prev => prev.map(z => z.id === updatedZone.id ? updatedZone : z));
+    upsertZone(updatedZone);
+    setNotificationLogs(prev => [
+      `Telemetry updated: Calibrated sensors for ${updatedZone.name}.`,
       ...prev
     ]);
   };
@@ -111,6 +260,7 @@ export default function App() {
   // Handler for adding weekly journal entry
   const handleAddJournalEntry = (newEntry: JournalEntry) => {
     setJournalEntries(prev => [newEntry, ...prev]);
+    upsertJournalEntry(newEntry);
     setNotificationLogs(prev => [
       `Journal entry logged: Week ${newEntry.week} evaluation recorded successfully.`,
       ...prev
@@ -120,6 +270,7 @@ export default function App() {
   // Handler for deleting custom journal entry
   const handleDeleteJournalEntry = (id: string) => {
     setJournalEntries(prev => prev.filter(e => e.id !== id));
+    deleteJournalEntryDb(id);
     setNotificationLogs(prev => [
       `Journal log removed from cultivation database.`,
       ...prev
@@ -128,21 +279,30 @@ export default function App() {
 
   // Factory default reset
   const handleResetData = () => {
-    localStorage.removeItem('growsmart_zones');
-    localStorage.removeItem('growsmart_alerts');
-    localStorage.removeItem('growsmart_journal_entries');
-    setZones(INITIAL_ZONES);
-    setAlerts(INITIAL_ALERTS);
-    setJournalEntries(INITIAL_JOURNAL_ENTRIES);
+    if (user) {
+      localStorage.removeItem(`growsmart_${user.email}_zones`);
+      localStorage.removeItem(`growsmart_${user.email}_alerts`);
+      localStorage.removeItem(`growsmart_${user.email}_journal_entries`);
+    } else {
+      localStorage.removeItem('growsmart_zones');
+      localStorage.removeItem('growsmart_alerts');
+      localStorage.removeItem('growsmart_journal_entries');
+    }
+    setZones([]);
+    setAlerts([]);
+    setJournalEntries([]);
     setSelectedZoneId('zone-1');
     setNotificationLogs([
-      'Database restored to master factory defaults successfully.',
-      'Aero-root networks and multi-spectrum arrays re-initialized.'
+      'All local and user-scoped telemetry databases have been safely cleared.'
     ]);
   };
 
   // Filter out active alerts for the header notification count
   const unreadNotificationsCount = alerts.filter(a => a.active).length;
+
+  if (!user) {
+    return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-[#f9faf2] text-text-dark font-sans flex flex-col antialiased">
@@ -175,11 +335,15 @@ export default function App() {
                   onDismissAlert={handleDismissAlert}
                   onAddZone={handleAddZone}
                   onTriggerAlert={handleTriggerAlert}
+                  onChangeTab={setActiveTab}
                 />
               )}
 
               {activeTab === 'tracking' && (
                 <TrackingTab 
+                  zones={zones}
+                  onAddZone={handleAddZone}
+                  onUpdateZone={handleUpdateZone}
                   journalEntries={journalEntries}
                   onAddJournalEntry={handleAddJournalEntry}
                   onDeleteJournalEntry={handleDeleteJournalEntry}
@@ -195,7 +359,10 @@ export default function App() {
               {activeTab === 'settings' && (
                 <SettingsTab 
                   onResetData={handleResetData}
-                  userEmail="midhunvprasad@gmail.com"
+                  userEmail={user.email}
+                  isSupabaseConfigured={isSupabaseConfigured}
+                  onLogout={handleLogout}
+                  zonesCount={zones.length}
                 />
               )}
             </motion.div>

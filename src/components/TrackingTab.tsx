@@ -1,438 +1,751 @@
 import React, { useState } from 'react';
 import { 
-  Sprout, Leaf, Flower2, Tractor, Plus, ChevronDown, 
-  ChevronUp, Calendar, AlertCircle, Check, Trash2 
+  Plus, Search, ChevronRight, ArrowLeft, Save, Sparkles, Droplet, Scissors,
+  FlaskConical, CheckCircle2, Loader2, Calendar, Wheat, Heart, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { JournalEntry, CropStage } from '../types';
+import { Zone, CropStage, JournalEntry } from '../types';
 
 interface TrackingTabProps {
-  journalEntries: JournalEntry[];
-  onAddJournalEntry: (entry: JournalEntry) => void;
-  onDeleteJournalEntry: (id: string) => void;
+  zones: Zone[];
+  onAddZone: (zone: Zone) => void;
+  onUpdateZone: (zone: Zone) => void;
+  journalEntries?: JournalEntry[];
+  onAddJournalEntry?: (entry: JournalEntry) => void;
+  onDeleteJournalEntry?: (id: string) => void;
+}
+
+const CROP_PRESETS = [
+  {
+    name: 'Sweet Genovese Basil',
+    crop: 'Basil',
+    growthStage: 'Seedling' as CropStage,
+    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAd_3TcNuyobE39AXepe4d8Y7Sx3F_EVXzhmdPMQccmQfJZizjFjrYPJ9BDG0I4-djovAeQONV745vAoCMNDcaIfFIm_tdoI6HvH8QR19XCUjHMrYifL_smaKYExmFipcwm-wSc_KF9RzBTuehSVnQdJMLro7E3hJXiGdlHRykL3XMWl4Ni3G1bGo0IUp6rjZ5nGPTEnSEunuRke-kAnCnEe2u4BfiW1swHcQSUOXFmVsW_ow3thol3sulE8FdnWW5PA59TPEqT_p2l',
+    pH: 6.0,
+    ec: 1.6,
+    humidity: 70,
+    temp: 22.0
+  },
+  {
+    name: 'Heirloom Roma Tomatoes',
+    crop: 'Tomatoes',
+    growthStage: 'Vegetative' as CropStage,
+    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAduFStSH35CBhN_w8_EMqOslEwCBitT1-Cxi0HkxOdIcK7SwsIXzrGyD2jLNiaNyQ5ptxvYegRvR_RuIxVOPr9pRIK8mSYvqwoMkYfODxXIi_sprlj4sBKFseUwb5fLz4hRxNIBgx27W5-4Fu-Fou8EZfCzsrfLcFfP8wwrlR1I9Uqkbl08iWFsBjI1yKaYN-iF5_u4o-kamQWHIERRnOTYeqdNNL0dL4O-oPBeOLBC87A9z1pWyV5RR3pmKCTHEs2pcK7pDlcivY2',
+    pH: 6.2,
+    ec: 2.1,
+    humidity: 65,
+    temp: 24.0
+  },
+  {
+    name: 'Lacinato Kale',
+    crop: 'Kale',
+    growthStage: 'Flowering' as CropStage,
+    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAyQi3on32kJeFaLRcojZN8cymkFhqG5rYuCKjo2ZS4fdbDWXVRXtArghIsy6oq-guSd6V0Q3P1qn7VMsPV5WEa_mNQjOe15jKZip8dMZ-TtGhgvpgF8RDoUBxU6FLjw98Wa3-bBXKLOxRQyxjnVgSa8zxcylCuqiSKQeAfWgXNvavz8dGlcjR-ko9fOPipvjv07__j6x4FH0ED46L0_Va4C8MXzt-NbzUl19uTFVkHnKZ8e8tWJWcJQxqbkYE63pMtqVXmKOk_qMf9',
+    pH: 6.5,
+    ec: 1.8,
+    humidity: 60,
+    temp: 18.0
+  },
+  {
+    name: 'Alpine Strawberries',
+    crop: 'Strawberries',
+    growthStage: 'Flowering' as CropStage,
+    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDEkVtLMnV4_u_RGN9BqxzFs_wDMhWIPhM94F33W5Sm7mNz2bTjgWWYd_uAACkN0CSJvvwiTpUpVvILGvmw46x4O6h_DeMshqa5fgm7-eiqkVTaAzvtErGgo088efJEcFG_yd4fsTgSUDs3Plyf7KZI5Cv_pdtDxTbabkUhmAOC3BgBIDInJmH3xBjGoBnHzaNHp90Lxt0omLP49dpu5we532aebOuFM7moegiA0CHejN8oGYIjqHSAUr1ob9pg-rAO9TXq_DYJOWLU',
+    pH: 5.8,
+    ec: 2.0,
+    humidity: 65,
+    temp: 21.0
+  }
+];
+
+const getFallbackImage = (cropName: string): string => {
+  const name = cropName.toLowerCase();
+  if (name.includes('basil')) return CROP_PRESETS[0].image;
+  if (name.includes('tomato')) return CROP_PRESETS[1].image;
+  if (name.includes('kale')) return CROP_PRESETS[2].image;
+  if (name.includes('strawberry') || name.includes('strawberries')) return CROP_PRESETS[3].image;
+  return 'https://images.unsplash.com/photo-1551248429-40975aa4de74?auto=format&fit=crop&q=80&w=300';
+};
+
+// Render custom responsive SVG sparklines based on sensor value arrays
+function SensorSparkline({ values, color = '#154212' }: { values: number[]; color?: string }) {
+  const width = 100;
+  const height = 40;
+  
+  // Safe mock history if there is insufficient data
+  const data = (values && values.length >= 2) 
+    ? values 
+    : [2.0, 2.3, 2.1, 2.4, 2.2, 2.5, 2.3];
+
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+
+  const points = data.map((val, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((val - min) / range) * (height - 12) - 6;
+    return { x, y };
+  });
+
+  const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const fillPathData = `${pathData} L ${width} ${height} L 0 ${height} Z`;
+  const gradientId = `grad-${Math.random().toString(36).substr(2, 5)}`;
+
+  return (
+    <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${width} ${height}`}>
+      <defs>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={fillPathData} fill={`url(#${gradientId})`} />
+      <path d={pathData} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 export default function TrackingTab({
-  journalEntries,
-  onAddJournalEntry,
-  onDeleteJournalEntry
+  zones,
+  onAddZone,
+  onUpdateZone,
+  journalEntries = [],
+  onAddJournalEntry
 }: TrackingTabProps) {
-  const [activeStage, setActiveStage] = useState<CropStage>('Vegetative');
-  const [expandedEntryId, setExpandedEntryId] = useState<string | null>('journal-4');
+  const [view, setView] = useState<'list' | 'detail'>('list');
+  const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Modal states for adding crop
   const [showAddModal, setShowAddModal] = useState(false);
+  const [newCropName, setNewCropName] = useState('');
+  const [newCropType, setNewCropType] = useState('Basil');
+  const [newGrowthStage, setNewGrowthStage] = useState<CropStage>('Seedling');
+  const [newPh, setNewPh] = useState(6.0);
+  const [newEc, setNewEc] = useState(1.8);
+  const [newHumidity, setNewHumidity] = useState(65);
+  const [newTemp, setNewTemp] = useState(22);
 
-  // Form states for new entry
-  const [formWeek, setFormWeek] = useState(5);
-  const [formDates, setFormDates] = useState('May 21 - May 27');
-  const [formPh, setFormPh] = useState(6.2);
-  const [formEc, setFormEc] = useState(1.8);
-  const [formVpd, setFormVpd] = useState(0.95);
-  const [formNotes, setFormNotes] = useState('');
-  const [formStage, setFormStage] = useState<CropStage>('Vegetative');
+  // Detail/Update states
+  const [detailPh, setDetailPh] = useState(6.0);
+  const [detailEc, setDetailEc] = useState(1.8);
+  const [detailHumidity, setDetailHumidity] = useState(65);
+  const [detailTds, setDetailTds] = useState(900); // TDS mapped: EC * 500
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [activeEvent, setActiveEvent] = useState<string | null>(null);
 
-  const stages: { id: CropStage; label: string; icon: any }[] = [
-    { id: 'Seedling', label: 'Seedling', icon: Sprout },
-    { id: 'Vegetative', label: 'Vegetative', icon: Leaf },
-    { id: 'Flowering', label: 'Flowering', icon: Flower2 },
-    { id: 'Harvest', label: 'Harvest', icon: Tractor },
-  ];
+  // Filter zones matching search query
+  const filteredZones = zones.filter(z => {
+    const q = searchQuery.toLowerCase();
+    return (
+      z.name.toLowerCase().includes(q) ||
+      z.crop.toLowerCase().includes(q) ||
+      z.growthStage.toLowerCase().includes(q)
+    );
+  });
 
-  const handleToggleExpand = (id: string) => {
-    setExpandedEntryId(expandedEntryId === id ? null : id);
+  // Open detail tracking page
+  const handleSelectCrop = (zone: Zone) => {
+    setSelectedZone(zone);
+    setDetailPh(zone.pH);
+    setDetailEc(zone.ec);
+    setDetailHumidity(zone.humidity);
+    setDetailTds(Math.round(zone.ec * 500));
+    setView('detail');
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formNotes.trim()) return;
+  // Safe back to list view
+  const handleBackToList = () => {
+    setView('list');
+    setSelectedZone(null);
+    setSaveSuccess(false);
+    setIsSaving(false);
+  };
 
-    const newEntry: JournalEntry = {
-      id: `journal-${Date.now()}`,
-      week: Number(formWeek),
-      dateRange: formDates,
-      avgPh: Number(formPh),
-      avgEc: Number(formEc),
-      vpd: Number(formVpd),
-      growthStage: formStage,
-      insight: formNotes,
-      notes: formNotes,
-      createdAt: new Date().toISOString()
+  // Dual binding for EC and TDS sliders
+  const handleEcChange = (val: number) => {
+    setDetailEc(val);
+    setDetailTds(Math.round(val * 500));
+  };
+
+  const handleTdsChange = (val: number) => {
+    setDetailTds(val);
+    // Maintain decimal precision for EC
+    setDetailEc(Number((val / 500).toFixed(2)));
+  };
+
+  // Create crop entry
+  const handleAddCropSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCropName.trim()) return;
+
+    const presetImg = getFallbackImage(newCropType);
+    
+    // Construct Zone type
+    const newZone: Zone = {
+      id: `zone-${Date.now()}`,
+      name: newCropName,
+      crop: newCropType,
+      status: 'Healthy',
+      image: presetImg,
+      pH: Number(newPh),
+      ec: Number(newEc),
+      temp: Number(newTemp),
+      humidity: Number(newHumidity),
+      vpd: 1.1, // standard default
+      growthStage: newGrowthStage,
+      history: {
+        pH: [newPh - 0.2, newPh + 0.1, newPh - 0.1, newPh, newPh],
+        ec: [newEc - 0.1, newEc + 0.2, newEc - 0.2, newEc, newEc],
+        temp: [newTemp - 1, newTemp + 1, newTemp, newTemp, newTemp],
+        humidity: [newHumidity - 5, newHumidity + 3, newHumidity - 2, newHumidity, newHumidity]
+      }
     };
 
-    onAddJournalEntry(newEntry);
-    setExpandedEntryId(newEntry.id);
-    
-    // Reset form
-    setFormWeek(formWeek + 1);
-    setFormNotes('');
+    onAddZone(newZone);
+
+    // Reset fields
+    setNewCropName('');
+    setNewCropType('Basil');
+    setNewGrowthStage('Seedling');
     setShowAddModal(false);
+  };
+
+  // Trigger quick log updates (Reservoir Flush, Pruning, Nutrient Feed)
+  const handleQuickLog = (eventLabel: string) => {
+    if (!selectedZone) return;
+    
+    setActiveEvent(eventLabel);
+    
+    // Add dynamic notification log to list
+    if (onAddJournalEntry) {
+      const newEntry: JournalEntry = {
+        id: `journal-${Date.now()}`,
+        week: 4,
+        dateRange: 'Today',
+        avgPh: detailPh,
+        avgEc: detailEc,
+        vpd: selectedZone.vpd,
+        growthStage: selectedZone.growthStage,
+        notes: `Quick Log Event triggered: ${eventLabel} performed on module.`,
+        insight: `Calibrated Biosphere parameters following: ${eventLabel}.`,
+        createdAt: new Date().toISOString()
+      };
+      onAddJournalEntry(newEntry);
+    }
+
+    setTimeout(() => {
+      setActiveEvent(null);
+    }, 1200);
+  };
+
+  // Commit updated crop details
+  const handleSaveTelemetry = () => {
+    if (!selectedZone) return;
+
+    setIsSaving(true);
+    
+    setTimeout(() => {
+      // Build updated zone object with expanded history
+      const updated: Zone = {
+        ...selectedZone,
+        pH: Number(detailPh),
+        ec: Number(detailEc),
+        humidity: Number(detailHumidity),
+        // push new values to history arrays
+        history: {
+          pH: [...selectedZone.history.pH.slice(-6), Number(detailPh)],
+          ec: [...selectedZone.history.ec.slice(-6), Number(detailEc)],
+          temp: [...selectedZone.history.temp.slice(-6), selectedZone.temp],
+          humidity: [...selectedZone.history.humidity.slice(-6), Number(detailHumidity)]
+        }
+      };
+
+      onUpdateZone(updated);
+      setIsSaving(false);
+      setSaveSuccess(true);
+      
+      // Auto return back to list shortly after success
+      setTimeout(() => {
+        setView('list');
+        setSelectedZone(null);
+        setSaveSuccess(false);
+      }, 1500);
+
+    }, 1200);
   };
 
   return (
     <div className="space-y-6 pb-24">
-      {/* Crop Header */}
-      <div className="space-y-1">
-        <h2 className="text-2xl font-black tracking-tight text-primary font-sans leading-tight">
-          Tracking: Heirloom Roma
-        </h2>
-        <p className="text-xs text-text-muted font-medium">
-          Plot 12-B • Batch #88421
-        </p>
-      </div>
-
-      {/* Interactive Growth Stage Card */}
-      <section className="glass-card p-5 rounded-2xl space-y-4">
-        <div className="flex justify-between items-center">
-          <span className="text-xs font-bold text-text-muted uppercase tracking-wider">
-            Growth Stage
-          </span>
-          <span className="px-3 py-1 bg-accent-gold text-accent-gold-dark text-[10px] font-black rounded-full uppercase tracking-wider">
-            {activeStage}
-          </span>
-        </div>
-
-        {/* Growth line timeline */}
-        <div className="relative pt-4 pb-2">
-          {/* Connecting grey background line */}
-          <div className="absolute top-[38px] left-[10%] right-[10%] h-1 bg-gray-200 -z-10" />
-          
-          {/* Green active progress line */}
-          <div 
-            className="absolute top-[38px] left-[10%] h-1 bg-primary -z-10 transition-all duration-500 ease-out"
-            style={{
-              width: 
-                activeStage === 'Seedling' ? '0%' :
-                activeStage === 'Vegetative' ? '33%' :
-                activeStage === 'Flowering' ? '66%' : '80%'
-            }}
-          />
-
-          <div className="grid grid-cols-4 text-center">
-            {stages.map((stage) => {
-              const StageIcon = stage.icon;
-              const isSelected = activeStage === stage.id;
-              
-              // Determine if stage is completed or current
-              const stageIndex = stages.findIndex(s => s.id === stage.id);
-              const activeIndex = stages.findIndex(s => s.id === activeStage);
-              const isCompleted = stageIndex < activeIndex;
-
-              return (
-                <button
-                  key={stage.id}
-                  id={`stage-node-${stage.id}`}
-                  onClick={() => setActiveStage(stage.id)}
-                  className="flex flex-col items-center gap-2 focus:outline-none"
-                >
-                  <div 
-                    className={`w-11 h-11 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                      isSelected 
-                        ? 'bg-primary border-primary text-white scale-110 shadow-md ring-4 ring-primary/10' 
-                        : isCompleted 
-                          ? 'bg-primary border-primary text-white'
-                          : 'bg-white border-gray-200 text-text-muted hover:border-primary/20'
-                    }`}
-                  >
-                    {isCompleted && !isSelected ? (
-                      <Check className="w-5 h-5 stroke-[2.5]" />
-                    ) : (
-                      <StageIcon className="w-5 h-5" />
-                    )}
-                  </div>
-                  <span className={`text-[10px] font-bold tracking-tight uppercase ${
-                    isSelected ? 'text-primary font-black' : 'text-text-muted'
-                  }`}>
-                    {stage.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Weekly Journal Log Section */}
-      <section className="space-y-4">
-        <div className="flex justify-between items-center px-1">
-          <h3 className="text-base font-bold text-text-dark">Weekly Journal</h3>
-          <button
-            id="btn-new-entry"
-            onClick={() => setShowAddModal(true)}
-            className="text-[11px] font-extrabold text-primary hover:text-primary-light flex items-center gap-1 bg-primary/5 hover:bg-primary/10 px-3 py-1.5 rounded-full border border-primary/10 transition-colors cursor-pointer"
+      <AnimatePresence mode="wait">
+        
+        {/* VIEW 1: ACTIVE CROPS LIST */}
+        {view === 'list' && (
+          <motion.div
+            key="list-view"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-5"
           >
-            <Plus className="w-3.5 h-3.5" /> NEW ENTRY
-          </button>
-        </div>
+            {/* Header section with add button */}
+            <div className="flex items-end justify-between">
+              <div className="space-y-1">
+                <h2 className="text-2xl font-black text-primary tracking-tight">Active Crops</h2>
+                <p className="text-xs text-text-muted font-bold">
+                  {zones.length} {zones.length === 1 ? 'crop' : 'crops'} currently in rotation
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="bg-primary hover:bg-primary-light text-white px-4 py-2.5 rounded-full text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow active:scale-95 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Add New Crop
+              </button>
+            </div>
 
-        <div className="space-y-4">
-          <AnimatePresence>
-            {journalEntries.map((entry) => {
-              const isExpanded = expandedEntryId === entry.id;
+            {/* Search Input bar */}
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search cultivars, stages, or health..."
+                className="w-full bg-surface-container-low border-none rounded-xl pl-11 pr-4 py-3.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary transition-all placeholder:text-text-muted text-text-dark"
+              />
+            </div>
 
-              return (
-                <motion.div
-                  key={entry.id}
-                  layout="position"
-                  className="glass-card rounded-2xl overflow-hidden transition-all border border-gray-100"
-                >
-                  {/* Card Header Header click triggers expand/collapse */}
+            {/* Crops Bento List */}
+            {filteredZones.length === 0 ? (
+              <div className="glass-card p-8 rounded-3xl text-center space-y-4 border border-dashed border-primary/20">
+                <div className="w-12 h-12 bg-primary/5 rounded-2xl flex items-center justify-center mx-auto text-primary">
+                  <Wheat className="w-6 h-6" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-sm font-black text-text-dark">No Crops Found</h3>
+                  <p className="text-xs text-text-muted max-w-xs mx-auto leading-relaxed">
+                    {searchQuery ? 'No cultivation modules match your search filters.' : 'Your active biosphere is clear. Populate your modules with fresh cultivars to start streaming sensor logs.'}
+                  </p>
+                </div>
+                {!searchQuery && (
                   <button
-                    onClick={() => handleToggleExpand(entry.id)}
-                    className="w-full p-4 flex items-center justify-between hover:bg-white/40 transition-colors text-left"
+                    type="button"
+                    onClick={() => setShowAddModal(true)}
+                    className="py-2.5 px-5 bg-primary text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow cursor-pointer active:scale-95"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="border-l-4 border-primary pl-3 py-0.5">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-text-muted block">
-                          CURRENT
-                        </span>
-                        <h4 className="text-sm font-bold text-text-dark leading-tight">
-                          Week {entry.week}
-                        </h4>
-                      </div>
-                      <span className="text-xs text-text-muted flex items-center gap-1 bg-gray-50 px-2 py-0.5 rounded-md border border-gray-100">
-                        <Calendar className="w-3 h-3 text-primary-light" /> {entry.dateRange}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {entry.id.startsWith('journal-') && !['journal-4', 'journal-3', 'journal-2'].includes(entry.id) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteJournalEntry(entry.id);
-                          }}
-                          className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                          title="Delete entry"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                      {isExpanded ? (
-                        <ChevronUp className="w-5 h-5 text-text-muted" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5 text-text-muted" />
-                      )}
-                    </div>
+                    Add Your First Crop
                   </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {filteredZones.map((zone) => {
+                  
+                  // Setup custom indicator color matching stage
+                  const isSeedling = zone.growthStage === 'Seedling';
+                  const isVeg = zone.growthStage === 'Vegetative';
+                  const isFlowering = zone.growthStage === 'Flowering';
+                  
+                  const statusDotColor = isSeedling 
+                    ? 'bg-amber-400 shadow-[0_0_8px_#ffe16d]' 
+                    : isVeg 
+                      ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
+                      : isFlowering 
+                        ? 'bg-pink-500 shadow-[0_0_8px_rgba(236,72,153,0.5)]' 
+                        : 'bg-primary shadow-[0_0_8px_rgba(21,66,18,0.5)]';
 
-                  {/* Expanded Body Content */}
-                  {isExpanded && (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="p-4 pt-0 border-t border-gray-50 space-y-4"
+                  // Determine status description text
+                  let statusDesc = 'Optimal Health';
+                  if (zone.status === 'Warning') statusDesc = 'Needs Attention';
+                  if (zone.status === 'Critical') statusDesc = 'Critical Warning';
+                  if (zone.crop === 'Basil' && isSeedling) statusDesc = 'Optimal Health';
+                  if (zone.crop === 'Tomatoes' && isVeg) statusDesc = 'Needs Water';
+                  if (zone.crop === 'Kale' && isFlowering) statusDesc = 'Harvest Soon';
+                  if (zone.status === 'Warning' || zone.pH < 5.5) statusDesc = 'Alert: Low pH';
+
+                  return (
+                    <div
+                      key={zone.id}
+                      onClick={() => handleSelectCrop(zone)}
+                      className="glass-card p-4 rounded-3xl flex gap-4 cursor-pointer hover:shadow-md hover:border-primary/20 transition-all border border-transparent group bg-white/70 backdrop-blur-md"
                     >
-                      {/* Metric Summary Averages */}
-                      <div className="grid grid-cols-3 gap-2 mt-4">
-                        <div className="bg-gray-50/80 p-3 rounded-xl border border-gray-100 text-center">
-                          <p className="text-[9px] font-bold text-text-muted uppercase tracking-wider">
-                            AVG pH
-                          </p>
-                          <p className="text-base font-black font-mono text-primary mt-0.5">
-                            {entry.avgPh.toFixed(1)}
-                          </p>
-                        </div>
-                        
-                        <div className="bg-gray-50/80 p-3 rounded-xl border border-gray-100 text-center">
-                          <p className="text-[9px] font-bold text-text-muted uppercase tracking-wider">
-                            AVG EC
-                          </p>
-                          <p className="text-base font-black font-mono text-primary mt-0.5">
-                            {entry.avgEc.toFixed(1)} <span className="text-[9px] font-sans font-medium text-text-muted">mS/cm</span>
-                          </p>
-                        </div>
-
-                        <div className="bg-gray-50/80 p-3 rounded-xl border border-gray-100 text-center">
-                          <p className="text-[9px] font-bold text-text-muted uppercase tracking-wider">
-                            VPD
-                          </p>
-                          <p className="text-base font-black font-mono text-primary mt-0.5">
-                            {entry.vpd.toFixed(2)} <span className="text-[9px] font-sans font-medium text-text-muted">kPa</span>
-                          </p>
-                        </div>
+                      {/* Image container */}
+                      <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 border border-gray-100 shadow-sm">
+                        <img 
+                          src={zone.image} 
+                          alt={zone.name}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
                       </div>
 
-                      {/* AI Insight banner inside card */}
-                      <div className="p-4 bg-amber-50/60 border border-amber-100 rounded-xl flex gap-3">
-                        <span className="w-8 h-8 rounded-full bg-accent-gold flex items-center justify-center flex-shrink-0">
-                          <AlertCircle className="w-4 h-4 text-accent-gold-dark" />
-                        </span>
-                        <div>
-                          <span className="text-[9px] font-bold text-accent-gold-dark uppercase tracking-widest block mb-0.5">
-                            AI INSIGHT
+                      {/* Info & Badges */}
+                      <div className="flex flex-col justify-between flex-grow py-0.5">
+                        <div className="space-y-1">
+                          <h3 className="text-sm font-black text-text-dark leading-tight group-hover:text-primary transition-colors">
+                            {zone.name}
+                          </h3>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${statusDotColor}`} />
+                            <span className="text-[9px] font-black text-text-muted uppercase tracking-widest">
+                              {zone.growthStage}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center mt-2">
+                          <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                            zone.status === 'Critical' 
+                              ? 'bg-red-100 text-red-800' 
+                              : zone.status === 'Warning' 
+                                ? 'bg-amber-100 text-amber-800' 
+                                : 'bg-primary-fixed/30 text-primary'
+                          }`}>
+                            {statusDesc}
                           </span>
-                          <p className="text-xs text-text-dark font-medium leading-relaxed">
-                            {entry.insight}
-                          </p>
+                          <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors transform group-hover:translate-x-0.5" />
                         </div>
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+        )}
 
-                      {/* Yield Matching blocks / Grey progress blocks at the bottom */}
-                      <div className="grid grid-cols-2 gap-3 pt-2">
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[9px] font-bold text-text-muted uppercase tracking-wider">
-                            <span>Biomass density</span>
-                            <span className="text-primary">84%</span>
-                          </div>
-                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-primary rounded-full" style={{ width: '84%' }}></div>
-                          </div>
-                        </div>
+        {/* VIEW 2: UPDATE CROP DATA */}
+        {view === 'detail' && selectedZone && (
+          <motion.div
+            key="detail-view"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            {/* Custom Header with Back Button */}
+            <div className="flex items-center gap-2">
+              <button 
+                type="button"
+                onClick={handleBackToList}
+                className="p-1 rounded-lg hover:bg-gray-100 text-primary cursor-pointer transition-colors active:scale-90"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h2 className="text-lg font-black text-primary tracking-tight">Update Crop Data</h2>
+            </div>
 
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[9px] font-bold text-text-muted uppercase tracking-wider">
-                            <span>Target Consistency</span>
-                            <span className="text-primary">92%</span>
-                          </div>
-                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-primary rounded-full" style={{ width: '92%' }}></div>
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
-      </section>
+            {/* Crop identity banner */}
+            <section className="flex items-center gap-4 py-2 border-b border-gray-100">
+              <div className="w-14 h-14 rounded-xl overflow-hidden border-2 border-white shadow-sm shrink-0">
+                <img 
+                  src={selectedZone.image} 
+                  alt={selectedZone.name}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-black text-text-dark">{selectedZone.name}</h3>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-secondary-container shadow-[0_0_8px_#ffe16d] animate-pulse" />
+                  <p className="text-[9px] font-black text-text-muted uppercase tracking-wider">
+                    Active Growth Phase • {selectedZone.growthStage}
+                  </p>
+                </div>
+              </div>
+            </section>
 
-      {/* Add Weekly Journal Entry Drawer */}
+            {/* Sliders Grid */}
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              
+              {/* Metric 1: pH Level */}
+              <div className="glass-card p-5 rounded-2xl flex flex-col gap-3 bg-white/70">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-black text-text-muted uppercase tracking-wider block">PH LEVEL</span>
+                    <span className="text-xl font-black text-primary font-mono">{detailPh.toFixed(1)}</span>
+                  </div>
+                  <div className="w-24 h-10 shrink-0">
+                    <SensorSparkline values={selectedZone.history.pH} color="#154212" />
+                  </div>
+                </div>
+                <input 
+                  type="range"
+                  min="4.0"
+                  max="9.0"
+                  step="0.1"
+                  value={detailPh}
+                  disabled={isSaving}
+                  onChange={(e) => setDetailPh(Number(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-full appearance-none accent-secondary cursor-pointer disabled:opacity-50"
+                />
+              </div>
+
+              {/* Metric 2: EC (Electrical Conductivity) */}
+              <div className="glass-card p-5 rounded-2xl flex flex-col gap-3 bg-white/70">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-black text-text-muted uppercase tracking-wider block">EC (mS/cm)</span>
+                    <span className="text-xl font-black text-primary font-mono">{detailEc.toFixed(1)}</span>
+                  </div>
+                  <div className="w-24 h-10 shrink-0">
+                    <SensorSparkline values={selectedZone.history.ec} color="#154212" />
+                  </div>
+                </div>
+                <input 
+                  type="range"
+                  min="0.0"
+                  max="5.0"
+                  step="0.1"
+                  value={detailEc}
+                  disabled={isSaving}
+                  onChange={(e) => handleEcChange(Number(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-full appearance-none accent-secondary cursor-pointer disabled:opacity-50"
+                />
+              </div>
+
+              {/* Metric 3: Humidity (%) */}
+              <div className="glass-card p-5 rounded-2xl flex flex-col gap-3 bg-white/70">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-black text-text-muted uppercase tracking-wider block">HUMIDITY (%)</span>
+                    <span className="text-xl font-black text-primary font-mono">{Math.round(detailHumidity)}%</span>
+                  </div>
+                  <div className="w-24 h-10 shrink-0">
+                    <SensorSparkline values={selectedZone.history.humidity} color="#154212" />
+                  </div>
+                </div>
+                <input 
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={detailHumidity}
+                  disabled={isSaving}
+                  onChange={(e) => setDetailHumidity(Number(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-full appearance-none accent-secondary cursor-pointer disabled:opacity-50"
+                />
+              </div>
+
+              {/* Metric 4: TDS (ppm) (Editable Input) */}
+              <div className="glass-card p-5 rounded-2xl flex flex-col gap-3 bg-white/70 justify-between">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-black text-text-muted uppercase tracking-wider block">TDS (PPM)</span>
+                    <span className="text-xl font-black text-primary font-mono">{detailTds} ppm</span>
+                  </div>
+                  <div className="w-24 h-10 shrink-0">
+                    <SensorSparkline values={selectedZone.history.ec.map(e => e * 500)} color="#154212" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <input 
+                    type="number"
+                    min="0"
+                    max="2500"
+                    value={detailTds}
+                    disabled={isSaving}
+                    onChange={(e) => handleTdsChange(Number(e.target.value))}
+                    className="bg-gray-50 border border-gray-100 rounded-xl font-mono text-primary w-full h-10 text-center text-xs font-bold focus:outline-none focus:border-primary disabled:opacity-50"
+                  />
+                </div>
+              </div>
+
+            </section>
+
+            {/* Quick Log Events */}
+            <section className="space-y-3">
+              <h4 className="text-[10px] font-black text-text-muted uppercase tracking-wider px-1">
+                QUICK LOG EVENTS
+              </h4>
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => handleQuickLog('Reservoir Flush')}
+                  disabled={isSaving || activeEvent !== null}
+                  className="flex-shrink-0 bg-white/70 border border-gray-100 px-4 py-3 rounded-2xl flex items-center gap-2 active:scale-95 transition-all text-xs font-bold text-text-dark cursor-pointer shadow-sm hover:border-primary/10"
+                >
+                  <Droplet className="w-4 h-4 text-primary shrink-0" />
+                  <span>{activeEvent === 'Reservoir Flush' ? 'Logged!' : 'Reservoir Flush'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLog('Pruning')}
+                  disabled={isSaving || activeEvent !== null}
+                  className="flex-shrink-0 bg-white/70 border border-gray-100 px-4 py-3 rounded-2xl flex items-center gap-2 active:scale-95 transition-all text-xs font-bold text-text-dark cursor-pointer shadow-sm hover:border-primary/10"
+                >
+                  <Scissors className="w-4 h-4 text-primary shrink-0" />
+                  <span>{activeEvent === 'Pruning' ? 'Logged!' : 'Pruning'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLog('Nutrient Feed')}
+                  disabled={isSaving || activeEvent !== null}
+                  className="flex-shrink-0 bg-white/70 border border-gray-100 px-4 py-3 rounded-2xl flex items-center gap-2 active:scale-95 transition-all text-xs font-bold text-text-dark cursor-pointer shadow-sm hover:border-primary/10"
+                >
+                  <FlaskConical className="w-4 h-4 text-primary shrink-0" />
+                  <span>{activeEvent === 'Nutrient Feed' ? 'Logged!' : 'Nutrient Feed'}</span>
+                </button>
+              </div>
+            </section>
+
+            {/* Action Buttons */}
+            <div className="space-y-4 pt-2">
+              <button
+                type="button"
+                onClick={handleSaveTelemetry}
+                disabled={isSaving || saveSuccess}
+                className={`w-full h-12 rounded-full font-bold flex items-center justify-center gap-2 shadow transition-all cursor-pointer ${
+                  saveSuccess 
+                    ? 'bg-secondary text-on-secondary' 
+                    : 'bg-primary text-white hover:bg-primary-light active:scale-95'
+                }`}
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Saving Telemetry...</span>
+                  </>
+                ) : saveSuccess ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span>Telemetry Logged Successfully</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>Save Telemetry Update</span>
+                  </>
+                )}
+              </button>
+              
+              <p className="text-center text-[10px] text-text-muted italic">
+                Last broadcast: Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+      </AnimatePresence>
+
+      {/* MODAL: ADD NEW CROP */}
       <AnimatePresence>
         {showAddModal && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center px-4 bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/40 backdrop-blur-sm">
             <div className="absolute inset-0" onClick={() => setShowAddModal(false)} />
             
             <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              className="relative w-full max-w-md bg-white rounded-t-3xl shadow-2xl p-6 pb-8 z-10"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl z-10 border border-gray-100"
             >
-              <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-
-              <h3 className="text-lg font-bold text-text-dark mb-4">
-                Record Weekly Journal Log
+              <h3 className="text-sm font-black text-text-dark mb-4 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-primary" /> Initialize Custom Crop
               </h3>
 
-              <form onSubmit={handleFormSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider block mb-1">
-                      Week Number
-                    </label>
-                    <input 
-                      type="number"
-                      required
-                      value={formWeek}
-                      onChange={(e) => setFormWeek(Number(e.target.value))}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-primary"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider block mb-1">
-                      Growth Phase
-                    </label>
-                    <select
-                      value={formStage}
-                      onChange={(e) => setFormStage(e.target.value as CropStage)}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-primary"
-                    >
-                      <option value="Seedling">Seedling</option>
-                      <option value="Vegetative">Vegetative</option>
-                      <option value="Flowering">Flowering</option>
-                      <option value="Harvest">Harvest</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider block mb-1">
-                    Date Interval
+              <form onSubmit={handleAddCropSubmit} className="space-y-4">
+                {/* Crop Name */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-text-muted uppercase tracking-wider block">
+                    Crop Name
                   </label>
-                  <input 
+                  <input
                     type="text"
                     required
-                    value={formDates}
-                    onChange={(e) => setFormDates(e.target.value)}
-                    placeholder="e.g. May 21 - May 27"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-primary"
+                    placeholder="e.g. Red Heirloom Roma"
+                    value={newCropName}
+                    onChange={(e) => setNewCropName(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-primary text-text-dark"
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider block mb-1">
-                      pH Value
-                    </label>
-                    <input 
-                      type="number"
-                      step="0.1"
-                      required
-                      value={formPh}
-                      onChange={(e) => setFormPh(Number(e.target.value))}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-primary"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider block mb-1">
-                      EC (mS/cm)
-                    </label>
-                    <input 
-                      type="number"
-                      step="0.1"
-                      required
-                      value={formEc}
-                      onChange={(e) => setFormEc(Number(e.target.value))}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-primary"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider block mb-1">
-                      VPD (kPa)
-                    </label>
-                    <input 
-                      type="number"
-                      step="0.01"
-                      required
-                      value={formVpd}
-                      onChange={(e) => setFormVpd(Number(e.target.value))}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-primary"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider block mb-1">
-                    Observations & AI Insights
+                {/* Cultivar Selection */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-text-muted uppercase tracking-wider block">
+                    Cultivar Category
                   </label>
-                  <textarea
-                    required
-                    rows={3}
-                    placeholder="Provide specific notes regarding leaf expansion, nutrient updates, etc."
-                    value={formNotes}
-                    onChange={(e) => setFormNotes(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary"
-                  />
+                  <select
+                    value={newCropType}
+                    onChange={(e) => setNewCropType(e.target.value)}
+                    className="w-full bg-white border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-primary text-text-dark"
+                  >
+                    <option value="Basil">Basil (Sweet Genovese)</option>
+                    <option value="Tomatoes">Tomatoes (Roma Heirloom)</option>
+                    <option value="Kale">Kale (Curly Lacinato)</option>
+                    <option value="Strawberries">Strawberries (Alpine Berry)</option>
+                    <option value="Lettuce">Lettuce (Butterhead)</option>
+                    <option value="Mint">Peppermint (Herbal)</option>
+                  </select>
                 </div>
 
-                <div className="flex gap-3 pt-2">
+                {/* Growth Stage selection */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-text-muted uppercase tracking-wider block">
+                    Initial growth stage
+                  </label>
+                  <select
+                    value={newGrowthStage}
+                    onChange={(e) => setNewGrowthStage(e.target.value as CropStage)}
+                    className="w-full bg-white border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-primary text-text-dark"
+                  >
+                    <option value="Seedling">Seedling</option>
+                    <option value="Vegetative">Vegetative</option>
+                    <option value="Flowering">Flowering</option>
+                    <option value="Harvest">Harvest Ready</option>
+                  </select>
+                </div>
+
+                {/* Sensors slider initializers */}
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-text-muted uppercase tracking-widest block">
+                      Target pH
+                    </label>
+                    <input 
+                      type="number"
+                      step="0.1"
+                      min="5.0"
+                      max="7.5"
+                      value={newPh}
+                      onChange={(e) => setNewPh(Number(e.target.value))}
+                      className="w-full bg-gray-50 border border-gray-100 rounded-xl px-2.5 py-1.5 text-xs font-bold text-center font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-text-muted uppercase tracking-widest block">
+                      Target EC
+                    </label>
+                    <input 
+                      type="number"
+                      step="0.1"
+                      min="0.5"
+                      max="3.5"
+                      value={newEc}
+                      onChange={(e) => setNewEc(Number(e.target.value))}
+                      className="w-full bg-gray-50 border border-gray-100 rounded-xl px-2.5 py-1.5 text-xs font-bold text-center font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-2.5 pt-3">
                   <button
                     type="button"
                     onClick={() => setShowAddModal(false)}
-                    className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-text-dark text-xs font-extrabold rounded-xl transition-colors cursor-pointer"
+                    className="w-1/2 py-2.5 border border-gray-100 hover:bg-gray-50 text-text-muted text-[10px] font-black uppercase tracking-wider rounded-xl transition-colors cursor-pointer text-center"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-3 bg-primary hover:bg-primary-light text-white text-xs font-extrabold rounded-xl shadow transition-colors cursor-pointer"
+                    className="w-1/2 py-2.5 bg-primary hover:bg-primary-light text-white text-[10px] font-black uppercase tracking-wider rounded-xl shadow transition-colors cursor-pointer text-center"
                   >
-                    Save Log Entry
+                    Establish Crop
                   </button>
                 </div>
               </form>
@@ -440,6 +753,7 @@ export default function TrackingTab({
           </div>
         )}
       </AnimatePresence>
+
     </div>
   );
 }

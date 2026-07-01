@@ -1,4 +1,4 @@
-import { LayoutDashboard, Leaf, Award, Settings } from 'lucide-react';
+import { LayoutDashboard, Leaf, Award, User } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export type TabType = 'dashboard' | 'tracking' | 'quality' | 'settings';
@@ -11,9 +11,9 @@ interface NavbarProps {
 export default function Navbar({ activeTab, onChangeTab }: NavbarProps) {
   const tabs = [
     { id: 'dashboard' as TabType, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'tracking' as TabType, label: 'Tracking', icon: Leaf },
+    { id: 'tracking' as TabType, label: 'Crops', icon: Leaf },
     { id: 'quality' as TabType, label: 'Quality', icon: Award },
-    { id: 'settings' as TabType, label: 'Settings', icon: Settings },
+    { id: 'settings' as TabType, label: 'Profile', icon: User },
   ];
 
   return (
