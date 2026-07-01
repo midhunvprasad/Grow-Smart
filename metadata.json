@@ -1,0 +1,6 @@
+{
+  "name": "Grow Smart",
+  "description": "An intelligent agricultural mobile dashboard for real-time crop monitoring, quality certification, and plant growth tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
