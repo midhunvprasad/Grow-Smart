@@ -34,6 +34,12 @@ create table if not exists public.zones (
 -- Index for speedy lookups
 create index if not exists idx_zones_status on public.zones(status);
 
+-- Migration to add history columns to public.zones if they do not exist
+alter table public.zones add column if not exists history_ph numeric[] not null default array[6.1, 6.3, 6.2, 6.0, 6.2, 6.1, 6.2, 6.3, 6.2];
+alter table public.zones add column if not exists history_ec numeric[] not null default array[1.7, 1.8, 1.8, 1.7, 1.9, 1.8, 1.8, 1.8, 1.8];
+alter table public.zones add column if not exists history_temp numeric[] not null default array[23.8, 24.1, 24.5, 24.8, 24.2, 24.5, 24.6, 24.4, 24.5];
+alter table public.zones add column if not exists history_humidity numeric[] not null default array[65, 66, 68, 69, 67, 68, 68, 67, 68];
+
 ----------------------------------------------------
 -- 2. WEEKLY JOURNAL LOGS TABLE
 ----------------------------------------------------
@@ -69,7 +75,19 @@ create table if not exists public.alerts (
 create index if not exists idx_alerts_active on public.alerts(active) where active = true;
 
 ----------------------------------------------------
--- 4. DATABASE TRIGGERS (Auto-updates updated_at)
+-- 4. DEVICES TABLE
+----------------------------------------------------
+create table if not exists public.devices (
+    id uuid default gen_random_uuid() primary key,
+    device_uid text not null,
+    nickname text not null,
+    status text not null check (status in ('online', 'offline')),
+    user_id uuid references auth.users(id) on delete cascade,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+----------------------------------------------------
+-- 5. DATABASE TRIGGERS (Auto-updates updated_at)
 ----------------------------------------------------
 create or replace function public.handle_update_timestamp()
 returns trigger as $$
@@ -85,11 +103,12 @@ create trigger trigger_zones_updated_at
     execute function public.handle_update_timestamp();
 
 ----------------------------------------------------
--- 5. ENABLE ROW-LEVEL SECURITY (RLS)
+-- 6. ENABLE ROW-LEVEL SECURITY (RLS)
 ----------------------------------------------------
 alter table public.zones enable row level security;
 alter table public.journal_entries enable row level security;
 alter table public.alerts enable row level security;
+alter table public.devices enable row level security;
 
 -- Create policies to allow public anonymous read & write 
 -- (Perfect for prototype and client-side web dashboards)
@@ -110,6 +129,12 @@ create policy "Allow public read access to alerts" on public.alerts
     for select using (true);
 
 create policy "Allow public write access to alerts" on public.alerts
+    for all using (true) with check (true);
+
+create policy "Allow public read access to devices" on public.devices
+    for select using (true);
+
+create policy "Allow public write access to devices" on public.devices
     for all using (true) with check (true);
 
 ----------------------------------------------------
