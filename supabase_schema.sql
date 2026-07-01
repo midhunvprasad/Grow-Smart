@@ -74,6 +74,9 @@ create table if not exists public.alerts (
 -- Index for checking active alarms
 create index if not exists idx_alerts_active on public.alerts(active) where active = true;
 
+-- Migration to add zone column to public.alerts if it does not exist
+alter table public.alerts add column if not exists zone text not null default 'Zone 1';
+
 ----------------------------------------------------
 -- 4. DEVICES TABLE
 ----------------------------------------------------
